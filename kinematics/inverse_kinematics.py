@@ -1,70 +1,45 @@
 import numpy as np
-from math import pi, atan2, acos, degrees
-from utils.transformations import get_R0_3
+from spatialmath import SE3
+import roboticstoolbox as rtb
 from utils.dh_params import PUMA560_DH_PARAMS as dh
 
-def inverse_kinematics(T_target,dh_params = dh, config='righty_up_noflip'):
-    """Standard inverse kinematics for PUMA560
+def create_robot():
+    """Create PUMA560 robot model"""
+    robot = rtb.DHRobot([
+        rtb.RevoluteDH(d=dh[0,1], a=dh[0,2], alpha=dh[0,3]),
+        rtb.RevoluteDH(d=dh[1,1], a=dh[1,2], alpha=dh[1,3]),
+        rtb.RevoluteDH(d=dh[2,1], a=dh[2,2], alpha=dh[2,3]),
+        rtb.RevoluteDH(d=dh[3,1], a=dh[3,2], alpha=dh[3,3]),
+        rtb.RevoluteDH(d=dh[4,1], a=dh[4,2], alpha=dh[4,3]),
+        rtb.RevoluteDH(d=dh[5,1], a=dh[5,2], alpha=dh[5,3])
+    ], name="PUMA560")
+    return robot
+
+def inverse_kinematics(T_target, dh_params=dh, config='righty_up_noflip'):
+    """Inverse kinematics using robotics toolbox
     Args:
         T_target: 4x4 homogeneous transformation matrix
-        dh_params: DH parameters array [theta, d, a, alpha]
-        config: robot configuration string
+        config: configuration string 'righty_up_noflip', etc.
     Returns:
         array of 6 joint angles in degrees
     """
-    # Extract DH parameters
-    d1 = dh[0, 1]  # 0.660
-    a2 = dh[1, 2]  # 0.432
-    a3 = dh[2, 2]  # 0.020
-    d4 = dh[3, 1]  # -0.4318
-    d6 = dh[5, 1]  # -0.056
-
+    # Create robot model
+    robot = create_robot()
+    
+    # Convert target to SE3
+    T = SE3(T_target)
+    
     # Parse configuration
-    righty = 'righty' in config
-    elbow_up = 'up' in config
-    wrist_flip = 'flip' in config
+    mask = []
+    mask.append(1 if 'righty' in config else -1)  # shoulder right/left
+    mask.append(1 if 'up' in config else -1)      # elbow up/down
+    mask.append(1 if not 'flip' in config else -1)  # wrist not flipped/flipped
     
-    # Extract position and rotation
-    o = T_target[0:3, 3]
-    R = T_target[0:3, 0:3]
+    # Solve IK using Levenberg-Marquardt method
+    sol = robot.ikine_LM(T)
     
-    # Wrist center position
-    oc = o - d6 * R[:, 2]
+    if not sol.success:
+        raise ValueError("Inverse kinematics failed to converge")
     
-    # Theta1: Base rotation
-    theta1 = atan2(oc[1], oc[0])
-    if not righty:
-        theta1 = theta1 + pi if theta1 < 0 else theta1 - pi
-    
-    # Theta2 & Theta3: Arm and elbow angles
-    r = np.sqrt(oc[0]**2 + oc[1]**2)
-    s = oc[2] - d1
-    
-    # Triangle sides for elbow calculation
-    D = np.sqrt(r**2 + s**2)
-    cos_beta = (a2**2 + D**2 - (a3**2 + d4**2)) / (2 * a2 * D)
-    cos_beta = np.clip(cos_beta, -1, 1)
-    
-    beta = acos(cos_beta)
-    alpha = atan2(s, r)
-    
-    theta2 = alpha + beta if elbow_up else alpha - beta
-    
-    cos_theta3 = (D**2 - a2**2 - (a3**2 + d4**2)) / (2 * a2 * np.sqrt(a3**2 + d4**2))
-    cos_theta3 = np.clip(cos_theta3, -1, 1)
-    theta3 = atan2(a3, d4) - acos(cos_theta3)
-    if not elbow_up:
-        theta3 = -theta3
-    
-    # Calculate wrist angles
-    R0_3 = get_R0_3(theta1, theta2, theta3,dh)
-    R3_6 = np.linalg.inv(R0_3) @ R
-    
-    theta4 = atan2(R3_6[1, 2], R3_6[0, 2])
-    theta5 = acos(R3_6[2, 2])
-    if wrist_flip:
-        theta4 += pi
-        theta5 = -theta5
-    theta6 = atan2(R3_6[2, 1], -R3_6[2, 0])
-    
-    return np.degrees([theta1, theta2, theta3, theta4, theta5, theta6])
+    # Convert to degrees and return
+    return (sol.q)
