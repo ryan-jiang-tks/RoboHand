@@ -80,9 +80,9 @@ def plot_validation_result(actual_points, intended_points):
     
     # Plot settings
     # 设置坐标轴范围
-    ax.set_xlim([0, 0.6])
-    ax.set_ylim([0, 0.6])
-    ax.set_zlim([0.4, 0.7])
+    # ax.set_xlim([0, 0.6])
+    # ax.set_ylim([0, 0.6])
+    # ax.set_zlim([0.4, 0.7])
     ax.set_xlabel('X (m)')
     ax.set_ylabel('Y (m)')
     ax.set_zlabel('Z (m)')

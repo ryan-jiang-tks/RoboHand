@@ -222,47 +222,47 @@ class PUMA560Trajectory:
         
         return q, qd, qdd, t
 
-    # def star_trajectory(self, center, size, height, tf, dt=0.01):
-    #     """Generate trajectory for drawing a star
-    #     Returns: joint angles for the complete star trajectory"""
-    #     # Get star points
-    #     points = self.generate_star_points(center, size, height)
-    #     self.plot_star_points(points)
+    def star_trajectory(self, center, size, height, tf, dt=0.01):
+        """Generate trajectory for drawing a star
+        Returns: joint angles for the complete star trajectory"""
+        # Get star points
+        points = self.generate_star_points(center, size, height)
+        self.plot_star_points(points)
         
-    #     # Generate trajectory
-    #     t_segment = tf / len(points)
+        # Generate trajectory
+        t_segment = tf / len(points)
         
-    #     # Initialize arrays for complete trajectory
-    #     all_q = []
-    #     all_qd = []
-    #     all_qdd = []
-    #     all_t = []
+        # Initialize arrays for complete trajectory
+        all_q = []
+        all_qd = []
+        all_qdd = []
+        all_t = []
         
-    #     # Generate trajectories between consecutive points
-    #     for i in range(len(points)-1):
-    #         # Generate Cartesian trajectory segment
-    #         cart_points, t = self.cartesian_space_trajectory(points[i], points[i+1], t_segment, dt)
+        # Generate trajectories between consecutive points
+        for i in range(len(points)-1):
+            # Generate Cartesian trajectory segment
+            cart_points, t = self.cartesian_space_trajectory(points[i], points[i+1], t_segment, dt)
             
-    #         # Convert to joint space trajectory
-    #         q, qd, qdd, t = self.cartesian_to_joint_trajectory(cart_points, t)
+            # Convert to joint space trajectory
+            q, qd, qdd, t = self.cartesian_to_joint_trajectory(cart_points, t)
             
-    #         # Accumulate trajectories
-    #         if i == 0:
-    #             all_q = q
-    #             all_qd = qd
-    #             all_qdd = qdd
-    #             all_t = t
-    #         else:
-    #             all_q = np.vstack((all_q, q[1:]))
-    #             all_qd = np.vstack((all_qd, qd[1:]))
-    #             all_qdd = np.vstack((all_qdd, qdd[1:]))
-    #             all_t = np.concatenate((all_t, t[1:] + all_t[-1]))
+            # Accumulate trajectories
+            if i == 0:
+                all_q = q
+                all_qd = qd
+                all_qdd = qdd
+                all_t = t
+            else:
+                all_q = np.vstack((all_q, q[1:]))
+                all_qd = np.vstack((all_qd, qd[1:]))
+                all_qdd = np.vstack((all_qdd, qdd[1:]))
+                all_t = np.concatenate((all_t, t[1:] + all_t[-1]))
         
-    #     # Validate the trajectory
-    #     print("\nValidating trajectory...")
-    #     actual_points= self.validate_trajectory(all_q, points)
+        # Validate the trajectory
+        print("\nValidating trajectory...")
+        actual_points= self.validate_trajectory(all_q, points)
         
-    #     return all_q, all_qd, all_qdd, all_t
+        return all_q, all_qd, all_qdd, all_t
 
     def generate_star_points(self, center, size, height, num_points=20):
         """Generate points for a 5-pointed star in Cartesian space
