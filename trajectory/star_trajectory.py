@@ -1,90 +1,95 @@
 import numpy as np
-from utils.visualization import plot_star_points
-from .cartesian_trajectory import cartesian_to_joint_trajectory, cartesian_space_trajectory
-from .validation_trajectory import validate_trajectory
+from spatialmath import SE3
 import roboticstoolbox as rtb
-
-def generate_star_points(center, size, height, num_points=20):
-        """Generate points for a 5-pointed star in Cartesian space
-        center: [x, y, z] center position
-        size: radius of the outer points
-        height: z-height of the star
-        num_points: number of points per segment
-        Returns: numpy array of points forming a star"""
-        
-        # Define 10 angles for the star (5 outer points and 5 inner points)
-        angles = np.linspace(0, 2*np.pi, 11)[:-1]  # 10 points, removing the duplicate last point
-        # Rotate by -pi/2 to start from top point
-        angles = angles - np.pi/2
-        
-        # Inner radius (golden ratio)
-        inner_size = size * 0.382
-        
-        # Initialize points array
-        points = []
-        
-        # Generate the main vertices of the star
-        vertices = []
-        for i in range(10):  # 10 points total (5 outer, 5 inner)
-            r = size if i % 2 == 0 else inner_size  # Alternate between outer and inner radius
-            x = center[0] + r * np.cos(angles[i])
-            y = center[1] + r * np.sin(angles[i])
-            vertices.append([x, y, height])
-        
-        # Add the first vertex again to close the star
-        vertices.append(vertices[0])
-        vertices = np.array(vertices)
-        
-        # Create smooth segments between vertices
-        for i in range(len(vertices) - 1):
-            t = np.linspace(0, 1, num_points)
-            segment = np.array([
-                np.linspace(vertices[i][0], vertices[i+1][0], num_points),
-                np.linspace(vertices[i][1], vertices[i+1][1], num_points),
-                np.full(num_points, height)
-            ]).T
-            points.extend(segment)
+from utils.visualization import plot_star_points
+from utils.robot_model import create_robot
+from trajectory.validation_trajectory import validate_trajectory
+def generate_star_points(center, size, height, num_points=10):
+    """Generate star points as SE3 poses"""
+    # Define angles for star points
+    angles = np.linspace(0, 2*np.pi, 11)[:-1] - np.pi/2
+    inner_size = size * 0.382
     
-        return np.array(points)
+    # Generate vertices with SE3 poses
+    vertices = []
+    for i in range(10):
+        r = size if i % 2 == 0 else inner_size
+        x = center[0] + r * np.cos(angles[i])
+        y = center[1] + r * np.sin(angles[i])
+        z = height
+        
+        # Calculate orientation - pointing down and tangent to path
+        Rz = SE3.Rz(angles[i])  # Rotate to face direction of motion
+        Ry = SE3.Ry(np.pi)      # Point downward
+        T = SE3(x, y, z) * Rz * Ry
+        vertices.append(T)
+    
+    # Close the loop
+    vertices.append(vertices[0])
+    
+    # Interpolate between vertices
+    points = []
+    for i in range(len(vertices)-1):
+        ctraj = rtb.ctraj(vertices[i], vertices[i+1], num_points)
+        points.extend(ctraj)
+    
+    return points
 
 def star_trajectory(center, size, height, tf, dt=0.01):
-        """Generate trajectory for drawing a star
-        Returns: joint angles for the complete star trajectory"""
-        # Get star points
-        points = generate_star_points(center, size, height)
-        plot_star_points(points)
+    """Generate star trajectory with SE3 poses"""
+    # Generate star points as SE3 poses
+    poses = generate_star_points(center, size, height,3)
+    samples = int(tf / dt)
+    # Extract positions for visualization
+    positions = np.array([pose.t for pose in poses])
+    plot_star_points(positions)
+    
+    # Initialize trajectory arrays
+    all_q = []
+    all_qd = []
+    all_qdd = []
+    robot = create_robot()
+    
+    # Generate joint trajectories through poses
+    q0 = np.zeros(6)  # Initial joint configuration
+    for i in range(len(poses)-1):
+        # Generate Cartesian trajectory between poses
+        traj = rtb.ctraj(poses[i], poses[i+1], int(samples/len(poses)))
         
-        # Generate trajectory
-        t_segment = tf / len(points)
+        # Convert to joint space
+        qsol = []
+        for T in traj:
+            sol = robot.ikine_LM(T, q0=q0)
+            if sol.success:
+                qsol.append(sol.q)
+                q0 = sol.q  # Use previous solution as initial guess
+        all_q.extend(qsol)
+
         
-        # Initialize arrays for complete trajectory
-        all_q = []
-        all_qd = []
-        all_qdd = []
-        all_t = []
-        
-        # Generate trajectories between consecutive points
-        for i in range(len(points)-1):
-            # Generate Cartesian trajectory segment
-            cart_points, t = cartesian_space_trajectory(points[i], points[i+1], t_segment, dt)
-            
-            # Convert to joint space trajectory
-            q, qd, qdd, t = cartesian_to_joint_trajectory(cart_points, t)
-            
-            # Accumulate trajectories
-            if i == 0:
-                all_q = q
-                all_qd = qd
-                all_qdd = qdd
-                all_t = t
-            else:
-                all_q = np.vstack((all_q, q[1:]))
-                all_qd = np.vstack((all_qd, qd[1:]))
-                all_qdd = np.vstack((all_qdd, qdd[1:]))
-                all_t = np.concatenate((all_t, t[1:] + all_t[-1]))
-        
-        # Validate the trajectory
-        print("\nValidating trajectory...")
-        actual_points= validate_trajectory(all_q, points)
-        
-        return all_q, all_qd, all_qdd, all_t
+      # Validate the trajectory
+    print("\nValidating trajectory...")
+    validate_trajectory(all_q, poses)
+
+    # Convert to numpy array
+    all_q = np.array(np.degrees(all_q))
+    t = np.linspace(0, tf, len(all_q))
+    
+    # Calculate velocities and accelerations
+    dt = t[1] - t[0]
+    all_qd = np.gradient(all_q, dt, axis=0)
+    all_qdd = np.gradient(all_qd, dt, axis=0)
+    
+  
+    
+    # # If errors are too large, try to optimize
+    # if max(pos_errors) > 5.0:  # 5mm threshold
+    #     print("Large errors detected, attempting optimization...")
+    #     # Try different IK solution
+    #     q0 = np.zeros(6)
+    #     for i, pose in enumerate(poses):
+    #         sol = robot.ikine_min(pose, q0)
+    #         if sol.success:
+    #             all_q[i] = sol.q
+    #             q0 = sol.q
+    
+    return all_q, all_qd, all_qdd, t

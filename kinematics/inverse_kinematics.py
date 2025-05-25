@@ -29,14 +29,10 @@ def inverse_kinematics(T_target, dh_params=dh, config='righty_up_noflip'):
     # Convert target to SE3
     T = SE3(T_target)
     
-    # Parse configuration
-    mask = []
-    mask.append(1 if 'righty' in config else -1)  # shoulder right/left
-    mask.append(1 if 'up' in config else -1)      # elbow up/down
-    mask.append(1 if not 'flip' in config else -1)  # wrist not flipped/flipped
+
     
     # Solve IK using Levenberg-Marquardt method
-    sol = robot.ikine_LM(T)
+    sol = robot.ikine_GN(T)
     
     if not sol.success:
         raise ValueError("Inverse kinematics failed to converge")

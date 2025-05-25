@@ -74,8 +74,8 @@ def plot_validation_result(actual_points, intended_points):
     
     # Plot both trajectories
     ax.scatter(intended_points[:, 0], intended_points[:, 1], intended_points[:, 2], 
-            'b', label='Intended Path')
-    ax.scatter(actual_points[:, 0], actual_points[:, 1], actual_points[:, 2], c='r', marker='o'
+            'r', label='Intended Path')
+    ax.scatter(actual_points[:, 0], actual_points[:, 1], actual_points[:, 2], c='b'
             ,label='Actual Path')
     
     # Plot settings
