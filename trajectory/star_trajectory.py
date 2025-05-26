@@ -40,7 +40,7 @@ def star_trajectory(center, size, height, tf, dt=0.01):
         
     # Validate the trajectory
     print("\nValidating trajectory...")
-    actual_poses, errors = validate_trajectory(all_q, poses)
+    validate_trajectory(all_q, poses)
 
     # Convert to numpy array
     all_q = np.array(np.degrees(all_q))
