@@ -3,42 +3,14 @@ from spatialmath import SE3
 import roboticstoolbox as rtb
 from utils.visualization import plot_star_points
 from utils.robot_model import create_robot
+from points.star_points import generate_star_points
+from points.points_validation import validate_points
 from trajectory.validation_trajectory import validate_trajectory
-def generate_star_points(center, size, height, num_points=10):
-    """Generate star points as SE3 poses"""
-    # Define angles for star points
-    angles = np.linspace(0, 2*np.pi, 11)[:-1] - np.pi/2
-    inner_size = size * 0.382
-    
-    # Generate vertices with SE3 poses
-    vertices = []
-    for i in range(10):
-        r = size if i % 2 == 0 else inner_size
-        x = center[0] + r * np.cos(angles[i])
-        y = center[1] + r * np.sin(angles[i])
-        z = height
-        
-        # Calculate orientation - pointing down and tangent to path
-        Rz = SE3.Rz(angles[i])  # Rotate to face direction of motion
-        Ry = SE3.Ry(np.pi)      # Point downward
-        T = SE3(x, y, z) * Rz * Ry
-        vertices.append(T)
-    
-    # Close the loop
-    vertices.append(vertices[0])
-    
-    # Interpolate between vertices
-    points = []
-    for i in range(len(vertices)-1):
-        ctraj = rtb.ctraj(vertices[i], vertices[i+1], num_points)
-        points.extend(ctraj)
-    
-    return points
 
 def star_trajectory(center, size, height, tf, dt=0.01):
     """Generate star trajectory with SE3 poses"""
     # Generate star points as SE3 poses
-    poses = generate_star_points(center, size, height,3)
+    poses = generate_star_points(center, size, height, 3)
     samples = int(tf / dt)
     # Extract positions for visualization
     positions = np.array([pose.t for pose in poses])
@@ -66,9 +38,9 @@ def star_trajectory(center, size, height, tf, dt=0.01):
         all_q.extend(qsol)
 
         
-      # Validate the trajectory
+    # Validate the trajectory
     print("\nValidating trajectory...")
-    validate_trajectory(all_q, poses)
+    actual_poses, errors = validate_trajectory(all_q, poses)
 
     # Convert to numpy array
     all_q = np.array(np.degrees(all_q))
