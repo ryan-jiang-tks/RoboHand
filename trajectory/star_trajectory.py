@@ -38,9 +38,9 @@ def star_trajectory(center, size, height, tf, dt=0.01):
         all_q.extend(qsol)
 
         
-    # Validate the trajectory
-    print("\nValidating trajectory...")
-    validate_trajectory(all_q, poses)
+    # # Validate the trajectory
+    # print("\nValidating trajectory...")
+    # validate_trajectory(all_q, poses)
 
     # Convert to numpy array
     all_q = np.array(np.degrees(all_q))

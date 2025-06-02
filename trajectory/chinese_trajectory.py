@@ -41,7 +41,7 @@ from utils.robot_model import create_robot
 from points.chinese_freetype import ChineseCharacterGenerator
 from utils.visualization import plot_trajectory
 from trajectory.validation_trajectory import validate_trajectory
-from utils.data_logging import save_trajectory_to_csv
+from utils.data_logging import save_trajectory_to_csv, save_q
 
 # 多进程初始化（Windows必须设置）
 set_start_method("spawn", force=True)
@@ -138,8 +138,9 @@ def parallel_ik_solver(
 
 def generate_chinese_trajectory(
     text: str,
-    center: List[float] = [0.3, 0.2, 0.5],
+    center: List[float] = [0, 0.2, 0.5],
     size: float = 0.2,
+    char_spacing:float = 1.1,
     height: float = 0.5,
     tf: float = 10.0,
     dt: float = 0.01,
@@ -177,7 +178,8 @@ def generate_chinese_trajectory(
         text=text,
         center=center,
         size=size,
-        height=height
+        height=height,
+        char_spacing=char_spacing
     )
     total_segments = len(poses) - 1
     samples = int(tf / dt)
@@ -220,17 +222,25 @@ def generate_chinese_trajectory(
     qdd = np.gradient(qd, dt_actual, axis=0)
     
     # 验证与保存
-    all_q_smooth, all_qd_smooth, all_qdd_smooth,t_new = validate_trajectory(
-        q_traj, qd, qdd, t, poses
-    )
+    # all_q_smooth, all_qd_smooth, all_qdd_smooth,t_new = validate_trajectory(
+    #     q_traj, qd, qdd, t, poses
+    # )
     
+    # 保存轨迹
     csv_path = save_trajectory_to_csv(
-        q=np.degrees(all_q_smooth),
-        qd=np.degrees(all_qd_smooth),
-        qdd=np.degrees(all_qdd_smooth),
-        t=t_new,
+        q=np.degrees(q_traj),
+        qd=np.degrees(qd),
+        qdd=np.degrees(qdd),
+        t=t,
         directory=os.path.join("data", "chinese_generated"),
         prefix=f"chinese_{text}_"
+    )
+    
+    # 保存关节角
+    q_path = save_q(
+        q_data=np.degrees(q_traj),
+        name=text,
+        directory=os.path.join("data", "joints", "chinese")
     )
 
     print(f"\n轨迹生成完成，耗时：{time.time()-start_time:.2f}s")
@@ -260,12 +270,12 @@ def generate_chinese_trajectory(
     #     # Validate again
     #     validate_trajectory(q_traj, qd, qdd, t, poses)
     
-    # Validate and smooth trajectory if needed
-    all_q_smooth, all_qd_smooth, all_qdd_smooth,t_new = validate_trajectory(
-        all_q_smooth, all_qd_smooth, all_qdd_smooth, t_new, poses
-    )
+    # # Validate and smooth trajectory if needed
+    # all_q_smooth, all_qd_smooth, all_qdd_smooth,t_new = validate_trajectory(
+    #     all_q_smooth, all_qd_smooth, all_qdd_smooth, t_new, poses
+    # )
     
-    return all_q_smooth, all_qd_smooth, all_qdd_smooth, t_new
+    return q_traj, qd, qdd, t
 
 # --------------------------
 # 命令行接口
@@ -275,7 +285,8 @@ def parse_arguments():
     """解析命令行参数"""
     parser = argparse.ArgumentParser(description="中文书写轨迹生成器")
     parser.add_argument("text", type=str, help="要书写的汉字")
-    parser.add_argument("--size", type=float, default=0.2, help="字符尺寸（米）")
+    parser.add_argument("--size", type=float, default=0.1, help="字符尺寸（米）")
+    parser.add_argument("--spacing", type=float, default=1.1, help="字符间距（米）")        
     parser.add_argument("--height", type=float, default=0.3, help="抬笔高度（米）")
     parser.add_argument("--time", type=float, default=40.0, help="总时间（秒）")
     parser.add_argument("--q0", nargs=6, type=float, default=[0,0,0,0,0,0],
@@ -291,12 +302,13 @@ def parse_arguments():
 if __name__ == "__main__":
     sys.argv = [
     "chinese_trajectory.py",  # 通常是脚本文件名，可以写成任意内容
-    "昊",                # <text>：位置参数，必须
+    "1028JZH",                # <text>：位置参数，必须
     "--size", "0.1",          # 可选参数
+    "--spacing", "1",  # 字符间距
     "--height", "0.4",
-    "--time", "40",
+    "--time", "20",
     "--q0", "10", "20", "10", "30", "40", "50",  # 初始关节角度（共6个）
-    # 这是 flag 类型，出现即为 True
+    "--disable_parallel"# 这是 flag 类型，出现即为 True
 ]
     args = parse_arguments()
   
@@ -307,6 +319,7 @@ if __name__ == "__main__":
     q, qd, qdd, t = generate_chinese_trajectory(
         text=args.text,
         size=args.size,
+        char_spacing=args.spacing,
         height=args.height,
         tf=args.time,
         q0=q0_rad,

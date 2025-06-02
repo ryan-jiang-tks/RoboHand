@@ -1,11 +1,14 @@
 import freetype
 import numpy as np
-from spatialmath import SE3,SO3
+from spatialmath import SE3, SO3, base
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+import os
+import pandas as pd
+from datetime import datetime
 
 class ChineseCharacterGenerator:
-    def __init__(self, font_path="type/GuFengLiShu-2.ttf"):
+    def __init__(self, font_path="type/SourceHanSansCN-Normal.otf"):
         self.font_path = font_path
         self.face = freetype.Face(font_path)
         # 提高字体渲染精度
@@ -54,16 +57,42 @@ class ChineseCharacterGenerator:
         for i in range(len(points) - 1):
             # 线性插值
             if i + 1 < len(points):
-                p0 = points[i].astype(np.float64)
-                p1 = points[i+1].astype(np.float64)
+                p0 = points[i]
+                p1 = points[i+1]
                 for ti in t:
                     point = (1-ti) * p0 + ti * p1
                     interpolated.append(point)
         
         return np.array(interpolated, dtype=np.float64)
     
-    def generate_se3_trajectory(self, text, center=[0.3, 0.2, 0.5], size=0.1, 
-                              height=0.02, char_spacing=1.7):
+    def interpolate_between_poses(self, pose1, pose2, num_points=5):
+        """在两个位姿之间插值"""
+        interpolated = []
+        # 跳过相同的位姿
+        if np.allclose(pose1.t, pose2.t, atol=1e-6):
+            return interpolated
+        
+        # 在两个位姿之间进行线性插值
+        for t in np.linspace(0, 1, num_points+2)[1:-1]:
+            # 位置插值
+            pos = (1-t) * pose1.t + t * pose2.t
+            
+            # 方向插值
+            direction = pose2.t - pose1.t
+            direction_xy = np.array([direction[0], direction[1], 0])
+            if np.linalg.norm(direction_xy) > 1e-6:
+                direction_xy = direction_xy / np.linalg.norm(direction_xy)
+                z_axis = np.array([0, 0, -1])
+                x_axis = direction_xy
+                y_axis = np.cross(z_axis, x_axis)
+                # R = SO3(np.array([x_axis, y_axis, z_axis]/)T)
+                R = SO3(np.eye(3))
+                interpolated.append(SE3.Rt(R, pos))
+            
+        return interpolated
+
+    def generate_se3_trajectory(self, text, center=[-0.5, 0.2, 0.3], size=0.07, 
+                              height=0.02, char_spacing=1.1):
         """生成多个汉字的SE3轨迹点
         Args:
             text: 要生成的汉字字符串
@@ -78,69 +107,85 @@ class ChineseCharacterGenerator:
         center = np.array(center, dtype=np.float64)
         POINT_THRESHOLD = 1e-6  # 重合点判断阈值
 
+        raw_poses = []  # Store initial poses
+        # Generate initial poses
         for i, char in enumerate(text):
+            # Move along X axis, keeping Y fixed, varying Z for height
             char_pos = center + np.array([i * size * char_spacing, 0, 0])
             contours = self.extract_char_contours(char)
-            
+            coutour_start=[]
+            pos = np.array([char_pos[0], char_pos[1], char_pos[2]])
+            R = SO3(np.array([
+                    [1, 0, 0],  # X axis points forward
+                    [0, 1, 0],  # Y axis points left
+                    [0, 0, 1]   # Z axis points up
+                ]))
+            poses.append(SE3.Rt(R, pos))
+        
             for contour in contours:
-                # 添加抬笔动作
-                if len(poses) > 0:
-                    # lift_pos = poses[-1].t + np.array([0, 0, height])
-                    # poses.append(SE3(lift_pos))
-                    start_pos = char_pos + np.array([contour[0][0]*size, contour[0][1]*size, 0])
-                    poses.append(SE3(start_pos))
+                # # Add pen-up motion if needed
+                # if len(poses) > 0:
+                #     start_pos = char_pos + np.array([contour[0][0]*size, 0, contour[0][1]*size])  # Swap Y->Z
+                #     poses.append(SE3(start_pos))
                 
-                # 生成轨迹点
-                last_valid_direction = None
                 for j in range(len(contour)):
                     point = contour[j]
-                    pos = char_pos + np.array([point[0]*size, point[1]*size, 0])
+                    # Map Y coordinate to Z axis
+                    pos = char_pos + np.array([point[0]*size, 0, point[1]*size])  # Swap Y->Z
                     
-                    # 计算方向
-                    if j < len(contour) - 1:
-                        next_point = contour[j+1]
-                        direction = next_point - point
-                        dist = np.linalg.norm(direction)
-                        
-                        # 处理重合点情况
-                        if dist < POINT_THRESHOLD:
-                            # 如果有上一个有效方向，使用它
-                            if last_valid_direction is not None:
-                                direction = last_valid_direction
-                            # 否则尝试查找下一个非重合点
-                            else:
-                                for k in range(j+2, len(contour)):
-                                    future_direction = contour[k] - point
-                                    if np.linalg.norm(future_direction) >= POINT_THRESHOLD:
-                                        direction = future_direction
-                                        break
-                                else:
-                                    # 如果找不到非重合点，使用默认方向
-                                    direction = np.array([1.0, 0.0])
-                        else:
-                            direction = direction / dist
-                            last_valid_direction = direction
-                        
-                        # 创建旋转矩阵
-                        z_axis = np.array([0, 0, -1])
-                        x_axis = np.array([direction[0], direction[1], 0])
-                        x_axis = x_axis / np.linalg.norm(x_axis)
-                        y_axis = np.cross(z_axis, x_axis)
-                        R = SO3(np.array([x_axis, y_axis, z_axis]).T)
-                    else:
-                        # 最后一个点使用最后的有效方向
-                        if last_valid_direction is not None:
-                            x_axis = np.array([last_valid_direction[0], last_valid_direction[1], 0])
-                            z_axis = np.array([0, 0, -1])
-                            y_axis = np.cross(z_axis, x_axis)
-                            R = SO3(np.array([x_axis, y_axis, z_axis]).T)
-                        else:
-                            R = SO3(np.eye(3))
-                    
+                    # Create fixed rotation matrix for XOZ plane writing
+                    R = SO3(np.array([
+                        [1, 0, 0],  # X axis points forward
+                        [0, 1, 0],  # Y axis points left
+                        [0, 0, 1]   # Z axis points up
+                    ]))
+                    if(j==1):
+                        coutour_start=SE3.Rt(R, pos)
                     poses.append(SE3.Rt(R, pos))
-                
-        return poses
+                poses.append(coutour_start)
+            #go back to init point
+            pos = np.array([char_pos[0], char_pos[1], char_pos[2]])
+            R = SO3(np.array([
+                    [1, 0, 0],  # X axis points forward
+                    [0, 1, 0],  # Y axis points left
+                    [0, 0, 1]   # Z axis points up
+                ]))
+            poses.append(SE3.Rt(R, pos))
+        
+        
+        # Add interpolated poses
+        interpolated_poses = []
+        for i in range(len(poses)-1):
+            interpolated_poses.append(poses[i])
+            interpolated = self.interpolate_between_poses(poses[i], poses[i+1])
+            interpolated_poses.extend(interpolated)
+        interpolated_poses.append(poses[-1])
+        
+        # 保存生成的位姿
+        self.save_poses_to_csv(interpolated_poses, text)
+        return interpolated_poses
     
+    def save_poses_to_csv(self, poses, text):
+        """Save poses as pure 6D Cartesian data (X, Y, Z in mm, Roll, Pitch, Yaw in degrees)"""
+        save_dir = os.path.join("data", "points", "chinese")
+        os.makedirs(save_dir, exist_ok=True)
+        
+        # Extract and stack 6D pose data
+        data = []
+        for pose in poses:
+            pos = pose.t * 1000  # Convert position from meters to millimeters
+            rpy_rad = base.tr2rpy(pose.A, order='xyz')
+            rpy_deg = np.degrees(rpy_rad)  # Convert rotations to degrees
+            data.append(np.concatenate([pos, rpy_deg]))
+        
+        # Convert to numpy array and save without headers
+        data_array = np.array(data)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = os.path.join(save_dir, f'chinese_poses_6d_{text}_{timestamp}.csv')
+        np.savetxt(filename, data_array, delimiter=',', fmt='%.6f')
+        print(f"6D poses saved to: {filename} (rotations in degrees)")
+        return filename
+
     def visualize_trajectory(self, poses):
         """可视化生成的轨迹"""
         fig = plt.figure(figsize=(12, 8))
@@ -175,8 +220,8 @@ class ChineseCharacterGenerator:
 if __name__ == "__main__":
     # 测试生成器
     generator = ChineseCharacterGenerator()
-    poses = generator.generate_se3_trajectory("江知昊", 
-                                           center=[0.3, 0.2, 0.5],
-                                           size=0.2,
-                                           height=0.02)
+    poses = generator.generate_se3_trajectory("1028JZH", 
+                                           center=[0, 0.2, 0.3],
+                                           size=0.1,
+                                           height=0.3)
     generator.visualize_trajectory(poses)

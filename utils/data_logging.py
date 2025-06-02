@@ -1,6 +1,7 @@
 import csv
 import os
 from datetime import datetime
+import numpy as np
 
 def save_trajectory_to_csv(q, qd, qdd, t, directory="data", prefix="trajectory_"):
     """Save trajectory data to CSV file
@@ -29,4 +30,20 @@ def save_trajectory_to_csv(q, qd, qdd, t, directory="data", prefix="trajectory_"
                 row.extend([q[i,j], qd[i,j], qdd[i,j]])
             writer.writerow(row)
             
+    return filename
+
+def save_q(q_data, name, directory="data/joints"):
+    """Save joint angles data to CSV
+    Args:
+        q_data: Joint angles in degrees (N x 6 array)
+        name: Name prefix for the file
+        directory: Directory to save the file
+    Returns:
+        filename: Path to saved file
+    """
+    os.makedirs(directory, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = os.path.join(directory, f'q_{name}_{timestamp}.csv')
+    np.savetxt(filename, q_data, delimiter=',', fmt='%.6f')
+    print(f"Joint angles saved to: {filename}")
     return filename

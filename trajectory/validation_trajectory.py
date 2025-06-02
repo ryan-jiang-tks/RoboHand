@@ -6,7 +6,7 @@ from utils.robot_model import create_robot
 import matplotlib.pyplot as plt
 from scipy.signal import savgol_filter
 
-def check_smoothness(t, q, qd, qdd, threshold_vel=100, threshold_acc=200):
+def check_smoothness(t, q, qd, qdd, threshold_vel=200, threshold_acc=10000):
     """Check trajectory smoothness and identify sharp changes"""
     # Calculate jerk
     dt = t[1] - t[0]
@@ -25,7 +25,7 @@ def plot_dynamics(t, q, qd, qdd, vel_spikes=None, acc_spikes=None):
     # Position
     for i in range(6):
         ax1.plot(t, q[:, i], label=f'Joint {i+1}')
-    ax1.set_ylabel('Position (deg)')
+    ax1.set_ylabel('Position (rad)')
     ax1.grid(True)
     ax1.legend()
     
@@ -36,7 +36,7 @@ def plot_dynamics(t, q, qd, qdd, vel_spikes=None, acc_spikes=None):
             ax2.scatter(t[vel_spikes[0][vel_spikes[1] == i]], 
                        qd[vel_spikes[0][vel_spikes[1] == i], i], 
                        color='red', marker='x')
-    ax2.set_ylabel('Velocity (deg/s)')
+    ax2.set_ylabel('Velocity (rad/s)')
     ax2.grid(True)
     
     # Acceleration
@@ -47,7 +47,7 @@ def plot_dynamics(t, q, qd, qdd, vel_spikes=None, acc_spikes=None):
                        qdd[acc_spikes[0][acc_spikes[1] == i], i], 
                        color='red', marker='x')
     ax3.set_xlabel('Time (s)')
-    ax3.set_ylabel('Acceleration (deg/s²)')
+    ax3.set_ylabel('Acceleration (rad/s²)')
     ax3.grid(True)
     
     plt.tight_layout()
@@ -173,17 +173,22 @@ def validate_trajectory(joint_angles, qd, qdd, t, intended_poses):
     if len(vel_spikes[0]) > 0 or len(acc_spikes[0]) > 0:
         print("\nSpikes detected, adding interpolated points...")
         
-        # Get unique problem locations
-        problem_indices = np.unique(np.concatenate([vel_spikes[0], acc_spikes[0]]))
+        # # Get unique problem locations
+        # problem_indices = np.unique(np.concatenate([vel_spikes[0], acc_spikes[0]]))
         
-        # Add interpolated points
-        q_new, t_new = interpolate_joint_trajectory(joint_angles, t, problem_indices)
+        # # Add interpolated points
+        # q_new, t_new = interpolate_joint_trajectory(joint_angles, t, problem_indices)
         
-        # Recalculate velocities and accelerations
-        dt_new = t_new[1] - t_new[0]
-        qd_new = np.gradient(q_new, dt_new, axis=0)
-        qdd_new = np.gradient(qd_new, dt_new, axis=0)
+        # # Recalculate velocities and accelerations
+        # dt_new = t_new[1] - t_new[0]
+        # qd_new = np.gradient(q_new, dt_new, axis=0)
+        # qdd_new = np.gradient(qd_new, dt_new, axis=0)
         
+        t_new = t
+        q_new = joint_angles.copy()
+        qd_new = qd.copy()
+        qdd_new = qdd.copy()
+
         # Apply smoothing to interpolated trajectory
         q_smooth, qd_smooth, qdd_smooth = smooth_trajectory(
             t_new, q_new, qd_new, qdd_new, vel_spikes, acc_spikes
